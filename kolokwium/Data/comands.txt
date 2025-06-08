@@ -1,0 +1,4 @@
+dotnet tool install --global dotnet-ef
+
+cd kolokwium
+dotnet ef migrations add "Commit"
