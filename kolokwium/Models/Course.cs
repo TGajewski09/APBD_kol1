@@ -3,21 +3,22 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace kolokwium.Models;
 
-[Table("Student")]
-public class Student
+[Table("Course")]
+public class Course
 {
     [Key]
     [Column("ID")]
     public int Id { get; set; }
-
-    [MaxLength(50)] 
-    public string FirstName { get; set; } = null!;
-
-    [MaxLength(100)] 
-    public string LastName { get; set; } = null!;
     
     [MaxLength(150)]
-    public string? Email { get; set; }
+    public string Title { get; set; } = null!;
 
+    [MaxLength(300)]
+    public string? Credits { get; set; } 
+    
+    [MaxLength(150)]
+    public string Teacher { get; set; } = null!;
+    
     public virtual ICollection<Enrollment> Enrollments { get; set; } = null!;
+
 }

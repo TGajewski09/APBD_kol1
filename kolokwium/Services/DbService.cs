@@ -8,123 +8,107 @@ namespace kolokwium.Services;
 
 public interface IDbService
 {
-    public Task<ICollection<StudentGetDto>> GetStudentsDetailsAsync();
-    public Task<StudentGetDto> CreateStudentAsync(StudentCreateDto dto);
-    public Task<StudentGetDto> GetStudentDetailsByIdAsync(int studentId);
-    public Task UpdateStudentAsync(int id, StudentUpdateDto studentData);
-    public Task RemoveStudentAsync(int studentId);
+    public Task<ICollection<EnrollmentGetDto>> GetEnrollmentsDetailsByAsync();
+    public Task<CourseCreateResponseDto> CreateCourseWithEnrollmentsAsync(CourseCreateDto createData);
+    // Task<CourseWithEnrollmentsGetDto> GetCourseWithEnrollmentsDetailsByIdAsync(int id);
 }
 
 public class DbService(AppDbContext data) : IDbService
 {
-    public async Task<ICollection<StudentGetDto>> GetStudentsDetailsAsync()
+    public async Task<ICollection<EnrollmentGetDto>>  GetEnrollmentsDetailsByAsync()
     {
-        return await data.Students.Select(s => new StudentGetDto
+        return await data.Enrollments.Select(enr => new EnrollmentGetDto
         {
-            Id = s.Id,
-            FirstName = s.FirstName,
-            LastName = s.LastName,
-            Age = s.Age,
-            EntranceExamScore = s.EntranceExamScore,
-            Groups = s.GroupAssigments.Select(ga => new StudentGetDtoGroup()
+            Student = new EnrollmentStudentGetDto
             {
-                Id = ga.GroupId,
-                Name = ga.Group.Name,
-            }).ToList()
+                Id = enr.StudentId,
+                FirstName = enr.Student.FirstName,
+                LastName = enr.Student.LastName,
+                Email = enr.Student.Email,
+            },
+            Course = new EnrollmentCourseGetDto
+            {
+                Id = enr.CourseId,
+                Teacher = enr.Course.Teacher,
+                Title = enr.Course.Title,
+            },
+            EnrollmentDate = enr.EnrollmentDate
         }).ToListAsync();
     }
 
-    public async Task<StudentGetDto> CreateStudentAsync(StudentCreateDto studentCreateDto)
+    public async Task<CourseCreateResponseDto> CreateCourseWithEnrollmentsAsync(CourseCreateDto createData)
     {
-        var groups = new List<Group>();
-        
-        if (studentCreateDto.GroupIds != null && studentCreateDto.GroupIds.Any())
+        var newCourse = new Course
         {
-            foreach (var groupId in studentCreateDto.GroupIds)
+            Title = createData.Title,
+            Credits = createData.Credits,
+            Teacher = createData.Teacher,
+        };
+        data.Courses.Add(newCourse);
+        await data.SaveChangesAsync();
+        
+        ICollection<CourseCreateResponseEnrollmentDto> enrollments = new List<CourseCreateResponseEnrollmentDto>();
+
+        if (createData.Students != null && createData.Students.Any())
+        {
+            foreach (var createStudentDto in createData.Students)
             {
-                var group = await data.Groups.FirstOrDefaultAsync(g => g.Id == groupId);
-                if (group == null)
+                var student= data.Students.FirstOrDefault(student => 
+                    student.FirstName == createStudentDto.FirstName 
+                    && student.LastName == createStudentDto.LastName
+                    && student.Email == createStudentDto.Email
+                    );
+
+                if (student == null)
                 {
-                    throw new NotFoundException($"Group {groupId} not found");
+                    student = new Student
+                    {
+                        FirstName = createStudentDto.FirstName,
+                        LastName = createStudentDto.LastName,
+                        Email = createStudentDto.Email,
+                    };
+                    data.Students.Add(student);
+                    await data.SaveChangesAsync();
                 }
-                groups.Add(group);
+
+                var newEnrollment = new Enrollment
+                {
+                    CourseId = newCourse.Id,
+                    StudentId = student.Id,
+                    EnrollmentDate = DateTime.Now
+                };
+                data.Enrollments.Add(newEnrollment);
+                await data.SaveChangesAsync();
+
+                CourseCreateResponseEnrollmentDto response = new CourseCreateResponseEnrollmentDto()
+                {
+                    StudentId = newEnrollment.StudentId,
+                    FirstName = student.FirstName,
+                    LastName = student.LastName,
+                    Email = student.Email,
+                    EnrollmentDate = newEnrollment.EnrollmentDate
+                };
+                enrollments.Add(response);
             }
         }
-
-        var student = new Student
+        
+        CourseCreateResponseDto returnResponse = new CourseCreateResponseDto
         {
-            FirstName = studentCreateDto.FirstName,
-            LastName = studentCreateDto.LastName,
-            Age = studentCreateDto.Age,
-            EntranceExamScore = studentCreateDto.EntranceExamScore,
-            GroupAssigments = (studentCreateDto.GroupIds ?? []).Select(groupId => new GroupAssigment()
+            Course = new CourseCreateResponseCourseDto
             {
-                GroupId = groupId
-            }).ToList()
+                Id = newCourse.Id,
+                Title = newCourse.Title,
+                Credits = newCourse.Credits,
+                Teacher = newCourse.Teacher,
+            },
+            Enrollments = enrollments
         };
         
-        await data.Students.AddAsync(student);
-        await data.SaveChangesAsync();
-
-        return new StudentGetDto()
-        {
-            Id = student.Id,
-            FirstName = student.FirstName,
-            LastName = student.LastName,
-            Age = student.Age,
-            EntranceExamScore = student.EntranceExamScore,
-            Groups = groups.Select(g => new StudentGetDtoGroup()
-            {
-                Id = g.Id,
-                Name = g.Name
-            }).ToList()
-        };
+        return returnResponse;
     }
 
-    public async Task<StudentGetDto> GetStudentDetailsByIdAsync(int studentId)
-    {
-        var result = await data.Students.Select(s => new StudentGetDto()
-        {
-            Id = s.Id,
-            FirstName = s.FirstName,
-            LastName = s.LastName,
-            Age = s.Age,
-            EntranceExamScore = s.EntranceExamScore,
-            Groups = s.GroupAssigments.Select(ga => new StudentGetDtoGroup()
-            {
-                Id = ga.GroupId,
-                Name = ga.Group.Name,
-            }).ToList()
-        }).FirstOrDefaultAsync(s => s.Id == studentId);
-        
-        return result ?? throw new NotFoundException($"Student with id {studentId} not found");
-    }
-
-    public async Task UpdateStudentAsync(int studentId, StudentUpdateDto studentData)
-    {
-        var student = await data.Students.FirstOrDefaultAsync(s => s.Id == studentId);
-        if (student is null)
-        {
-            throw new NotFoundException($"Student with id {studentId} not found");
-        }
-        
-        student.FirstName = studentData.FirstName;
-        student.LastName = studentData.LastName;
-        student.Age = studentData.Age;
-        student.EntranceExamScore = studentData.EntranceExamScore;
-        
-        await data.SaveChangesAsync();
-    }
-
-    public async Task RemoveStudentAsync(int studentId)
-    {
-        var student = await data.Students.FirstOrDefaultAsync(st => st.Id == studentId);
-        if (student is null)
-        {
-            throw new NotFoundException($"Student with id {studentId} not found");
-        }
-        
-        data.Students.Remove(student);
-        await data.SaveChangesAsync();
-    }
+    // public Task<CourseWithEnrollmentsGetDto> GetCourseWithEnrollmentsDetailsByIdAsync(int id)
+    // {
+    //     throw new NotImplementedException();
+    // }
 }
